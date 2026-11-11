@@ -17,7 +17,7 @@ import (
 )
 
 // Version of Jade Agent Base.
-const Version = "0.4.0"
+const Version = "0.5.0"
 
 // Options for Setup.
 type Options struct {
