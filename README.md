@@ -12,14 +12,13 @@ in the browser) and [Jade Agent UI/UX](https://github.com/lucky-edgelord/Jade-ag
 
 Batches, each tested and merged before the next:
 
-1. **Agent control** (this release): agent identities with scopes, tools over REST and MCP, an audit log.
-2. **Model gateway**: embeddings, chat and decisions for signed-up users through one API, with API keys, usage metering
-   and per-plan limits. Providers: Ollama Cloud and local Ollama, Ollaya (decisions), anything OpenAI-compatible
-   (OpenAI, OpenRouter, vLLM, llama.cpp, LM Studio, Groq, Together), Anthropic, Google, and small embedding models
-   running in the server.
-3. **Billing with Stripe**: plans, subscriptions, metered usage, checkout and the customer portal, with tools so an agent
+1. **Agent control** (0.1): agent identities with scopes, tools over REST and MCP, an audit log.
+2. **Model gateway** (0.2): chat, embeddings, decisions, web search and fetch for signed-up users, with API keys,
+   plans, rate limits and metered, priced usage. Modules switch on at runtime.
+3. **In-process embeddings**: small embedding models running inside the server, with no provider needed.
+4. **Billing with Stripe**: plans, subscriptions, metered usage, checkout and the customer portal, with tools so an agent
    can set up and run the business.
-4. **The kit and UI**: a kit client and sign-in, account and billing components.
+5. **The kit and UI**: a kit client and sign-in, account and billing components.
 
 ## Run it
 
@@ -30,8 +29,19 @@ go build -o bin/jab ./cmd/jab && cd bin
 ./jab serve                                                                     # http://127.0.0.1:8090, dashboard at /_/
 ```
 
-Every PocketBase command and flag works too. `--modules agent` (or `JAB_MODULES`) picks the modules; a module that is
-off adds nothing: no collections, routes or tools.
+Every PocketBase command and flag works too.
+
+## Modules
+
+Everything beyond the agent module is off until something switches it on, and a module that is off adds nothing: no
+collections, tools or served routes. An agent switches modules on and off at runtime with `modules_list`,
+`module_enable` and `module_disable`, and the choice is kept in `pb_data/jab.json` across restarts. `--modules
+agent,gateway` (or `JAB_MODULES`) sets them at start instead.
+
+| Module | What it adds |
+| --- | --- |
+| `agent` (always on) | Agents, the tool list over REST and MCP, the audit log. |
+| `gateway` | Chat, embeddings, decisions, web search and fetch for signed-up users (below). |
 
 ## Agents
 
@@ -92,6 +102,45 @@ Other Go packages add tools to the same list, with their own scopes:
 agent.AddScope("billing")
 agent.AddTool(&agent.Tool{Name: "plans_list", Scope: "billing", Description: "…", Run: func(c *agent.Call) (any, error) { … }})
 ```
+
+## The model gateway
+
+An agent sets up a business that sells model access: it adds **providers**, offers **models** at its own prices,
+defines **plans**, and watches **usage**. Signed-up users make API keys and call one API. Each capability switches on
+or off on its own (`gateway_serve`): `chat`, `embed`, `decide`, `search`, `fetch`, `openai_api` and `ollama_api`.
+
+| Provider type | For | Default address |
+| --- | --- | --- |
+| `ollama` | chat, embeddings, decisions (Ollama 0.35+) | http://localhost:11434 |
+| `ollama-cloud` | chat, embeddings, decisions, **web search** and **web fetch** | https://ollama.com |
+| `ollaya` | decision models | http://localhost:11435 |
+| `openai` | any OpenAI-compatible API: OpenAI, OpenRouter, vLLM, llama.cpp, LM Studio, Groq, Together, … | https://api.openai.com/v1 |
+| `anthropic` | chat (Claude) | https://api.anthropic.com |
+| `google` | chat and embeddings (Gemini) | https://generativelanguage.googleapis.com/v1beta |
+
+Every client format works with every provider: messages, images, tool calls (ids are matched up for providers that
+need them), thinking, JSON output, and streaming are translated both ways.
+
+| Endpoint | Format |
+| --- | --- |
+| `POST /v1/chat/completions`, `/v1/embeddings`, `GET /v1/models` | OpenAI (streaming, tools, `stream_options.include_usage`) |
+| `POST /api/chat`, `/api/embed`, `/api/embeddings`, `GET /api/tags` | Ollama (so Ollama clients, and the kit, work as they are) |
+| `POST /api/web_search`, `/api/web_fetch` (or `/v1/search`, `/v1/fetch`) | Ollama Cloud's web search and fetch |
+| `POST /v1/systemone` | decisions (System One API) |
+| `POST /api/gateway/keys`, `POST /api/gateway/keys/{id}/revoke`, `GET /api/gateway/me` | API keys and this month's use |
+
+Users sign up through PocketBase (`users`), make a key with `POST /api/gateway/keys`, and call with
+`Authorization: Bearer jab_…`. Keys are stored hashed and shown once. Every request is checked against the user's plan:
+which models it includes, requests a minute, and monthly tokens and dollars. Then it is recorded in `usage` with its
+tokens, price, time and status. Users see their own usage and keys; provider keys are never shown to anyone.
+
+| Tool | Does |
+| --- | --- |
+| `gateway_status`, `gateway_serve` | What is served, providers, models, plans, this month; switch capabilities on or off. |
+| `provider_set`, `provider_models`, `provider_delete` | Add or change a provider (its key is write-only); ask it which models it has. |
+| `model_set`, `model_delete` | Offer a model under your name for it: kind, upstream name, prices (per million tokens, or per call), plans. |
+| `plan_set`, `user_plan` | Plans (monthly tokens or budget, requests a minute, price, the default plan); put a user on one. |
+| `usage_report`, `keys_list`, `key_revoke` | Usage and charges by user, model or day; keys (never the secrets). |
 
 ## Safety
 

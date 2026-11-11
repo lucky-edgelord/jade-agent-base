@@ -34,7 +34,7 @@ func main() {
 	var hooksWatch, automigrate, indexFallback bool
 	var hooksPool int
 	f := app.RootCmd.PersistentFlags()
-	f.StringVar(&modules, "modules", env("JAB_MODULES", ""), "modules to switch on, comma-separated, or all (default agent; env JAB_MODULES)")
+	f.StringVar(&modules, "modules", env("JAB_MODULES", ""), "switch on exactly these modules, comma-separated, or all (env JAB_MODULES); without it, what agents switched on last time")
 	f.StringVar(&hooksDir, "hooksDir", "", "the directory with the JS app hooks (default pb_hooks next to pb_data)")
 	f.BoolVar(&hooksWatch, "hooksWatch", true, "reload when pb_hooks change (agents write hooks)")
 	f.IntVar(&hooksPool, "hooksPool", 15, "prewarmed JS runtimes for hooks")
@@ -58,11 +58,7 @@ func main() {
 	if err := jab.Setup(app, jab.Options{Modules: mods, HooksDir: hooksDir, PublicDir: publicDir}); err != nil {
 		log.Fatal(err)
 	}
-	for _, m := range mods {
-		if m == "agent" {
-			app.RootCmd.AddCommand(agent.Command(app))
-		}
-	}
+	app.RootCmd.AddCommand(agent.Command(app))
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Func: func(e *core.ServeEvent) error {
 			if !e.Router.HasRoute(http.MethodGet, "/{path...}") {

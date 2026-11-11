@@ -58,6 +58,27 @@ func AddTool(t *Tool) {
 	tools[t.Name] = t
 }
 
+// RemoveTool takes tools away (when their module is switched off).
+func RemoveTool(names ...string) {
+	mu.Lock()
+	defer mu.Unlock()
+	for _, n := range names {
+		delete(tools, n)
+	}
+}
+
+// ToolNames lists every registered tool.
+func ToolNames() []string {
+	mu.RLock()
+	defer mu.RUnlock()
+	out := make([]string, 0, len(tools))
+	for n := range tools {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // AddScope makes a scope known (for modules with their own scopes).
 func AddScope(s string) {
 	mu.Lock()

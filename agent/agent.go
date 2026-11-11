@@ -32,10 +32,10 @@ const (
 
 // Config for the agent module.
 type Config struct {
-	HooksDir  string // server-side JavaScript (default: pb_hooks next to the data dir)
-	PublicDir string // the static site (default: pb_public next to the data dir)
-	Version   string // reported by server_info
-	Modules   []string
+	HooksDir  string          // server-side JavaScript (default: pb_hooks next to the data dir)
+	PublicDir string          // the static site (default: pb_public next to the data dir)
+	Version   string          // reported by server_info
+	Modules   func() []string // the modules that are on (for server_info)
 	// Audit keeps a record of every tool call in agent_audit (default true).
 	NoAudit bool
 }
