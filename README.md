@@ -24,7 +24,7 @@ Batches, each tested and merged before the next:
 ## Run it
 
 ```sh
-go build -o jab ./cmd/jab
+go build -o bin/jab ./cmd/jab && cd bin
 ./jab superuser upsert you@example.com 'a-long-password'
 ./jab agent create shopkeeper --scopes read,write,schema,hooks,site --days 30   # prints the agent's token
 ./jab serve                                                                     # http://127.0.0.1:8090, dashboard at /_/
