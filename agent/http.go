@@ -45,7 +45,7 @@ func toolJSON(t *Tool, format string) map[string]any {
 func listTools(e *core.RequestEvent) error {
 	_, scopes, err := Caller(e)
 	if err != nil {
-		return e.UnauthorizedError(err.Error(), nil)
+		return authError(e, err)
 	}
 	f := e.Request.URL.Query().Get("format")
 	out := []map[string]any{}

@@ -96,6 +96,9 @@ func TestTaskCredentials(t *testing.T) {
 			t.Fatalf("a revoked credential over MCP: %d", c)
 		}
 	}
+	if c, _, _ := e.raw("GET", "/api/agent/tools", cred, nil, nil); c != 403 {
+		t.Fatalf("tools list with a revoked credential: %d", c)
+	}
 	// the agent's own token still works; deleting the credential record also refuses (fails closed)
 	if c, _, _ := e.raw("POST", "/api/agent/tools/collections_list", tok, nil, map[string]any{}); c != 200 {
 		t.Fatalf("the agent token after revoking a credential: %d", c)
