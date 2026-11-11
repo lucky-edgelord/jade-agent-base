@@ -114,20 +114,37 @@ func getTool(name string) *Tool {
 // ErrScope is returned when the caller lacks the tool's scope.
 var ErrScope = errors.New("not allowed")
 
+// RunOpts: what the audit log records about a call besides the tool and its arguments.
+type RunOpts struct {
+	Task     string // the task credential's task_id
+	Key      string // the idempotency key
+	Replayed bool   // answered from an earlier call with the same key
+}
+
 // Run runs a tool by name as the caller and records it in the audit log.
 func Run(app core.App, actor *core.Record, scopes map[string]bool, name string, args map[string]any) (any, error) {
+	return RunWith(app, actor, scopes, name, args, RunOpts{})
+}
+
+// RunWith is Run, with the task and idempotency key recorded in the audit log.
+func RunWith(app core.App, actor *core.Record, scopes map[string]bool, name string, args map[string]any, o RunOpts) (any, error) {
 	t := getTool(name)
 	if t == nil {
-		return nil, fmt.Errorf("unknown tool %q", name)
+		err := fmt.Errorf("unknown tool %q", name)
+		auditWith(app, actor, name, args, err, o)
+		return nil, err
 	}
 	if !scopes[t.Scope] {
-		return nil, fmt.Errorf("%w: %s needs the %q scope", ErrScope, name, t.Scope)
+		// refusals are logged too: Base can say no, and Base logs
+		err := fmt.Errorf("%w: %s needs the %q scope", ErrScope, name, t.Scope)
+		auditWith(app, actor, name, args, err, o)
+		return nil, err
 	}
 	if args == nil {
 		args = map[string]any{}
 	}
 	if err := checkArgs(t, args); err != nil {
-		audit(app, actor, name, args, nil, err)
+		auditWith(app, actor, name, args, err, o)
 		return nil, err
 	}
 	var out any
@@ -140,7 +157,7 @@ func Run(app core.App, actor *core.Record, scopes map[string]bool, name string, 
 		out, err = t.Run(&Call{App: app, Actor: actor, Scopes: scopes, Args: args})
 		return err
 	}()
-	audit(app, actor, name, args, out, err)
+	auditWith(app, actor, name, args, err, o)
 	return out, err
 }
 

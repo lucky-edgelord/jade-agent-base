@@ -5,8 +5,13 @@ rules, realtime, files, an admin dashboard), used as a Go library, plus modules 
 design the data, write server-side code, publish a website, and change settings, through one tool list over REST or
 MCP. Every action is in an audit log.
 
-It is the server side of the Jade stack: [Jade Agent Kit](https://github.com/lucky-edgelord/Jade-agent-kit) (the agent
-in the browser) and [Jade Agent UI/UX](https://github.com/lucky-edgelord/Jade-agent-ui-ux) (its interface).
+**Where it fits.** [Jade Vault](https://github.com/lucky-edgelord/jade-vault) is the control plane (the agent loop,
+schedules, autonomy, approvals, the person). **Jade Agent Base is the resource plane**: identity, the database, the
+model gateway, billing and the audit log. [Jade Agent Kit](https://github.com/lucky-edgelord/Jade-agent-kit) is the
+embeddable subset of Vault (the agent in any web page), [Jade Agent UI/UX](https://github.com/lucky-edgelord/Jade-agent-ui-ux)
+the presentation layer, and [Jade Agent Stack](https://github.com/lucky-edgelord/jade-agent-stack) the client toolkit over
+all four. The seam is MCP: Vault and Kit ask, Base answers, Base logs, Base can say no. Base hosts no agent and has no
+scheduler of its own.
 
 ## Where it is going
 
@@ -19,6 +24,8 @@ Batches, each tested and merged before the next:
    plans.
 4. **In-process embeddings** (0.4): model2vec embedding models running inside the server, in pure Go.
 5. **The kit and UI**: a kit client and sign-in, account and billing components.
+6. **Sign-in and limits** (0.5): OAuth2 providers (Google, Facebook, GitHub, …) and the API rate limiter, for agents.
+7. **The seam** (0.6): short-lived task credentials, idempotency keys on tool calls, refusals in the audit log.
 
 ## Run it
 
@@ -60,6 +67,43 @@ An agent is a record in the `agents` auth collection, with **scopes**:
 Agents use tokens a superuser issues: `jab agent create|token|revoke|list`, or `POST /api/agent/agents`,
 `/api/agent/agents/{id}/token` and `/api/agent/agents/{id}/revoke`. They cannot sign in with a password, and revoking
 ends every token at once. Superusers may call every tool.
+
+**`schema` is root-equivalent.** An agent that can create collections can create a public auth collection, open API
+rules to anyone, or read every record by changing a rule. Give it only to agents you trust as much as a superuser.
+`hooks` and `settings` are the same.
+
+### Task credentials
+
+An agent's token is long-lived (30 days). For each task, flow or scheduled job, the agent (Vault) mints a short-lived
+credential with only the scopes the task needs:
+
+```sh
+curl -X POST …/api/agent/credentials -H "Authorization: Bearer $AGENT_TOKEN" \
+  -d '{"task_id": "flow-42", "scopes": ["read", "write"], "ttl": "15m"}'
+# → {"token": "…", "id": "…", "task_id": "flow-42", "scopes": ["read","write"], "expires": "…"}
+curl -X POST …/api/agent/credentials/<id>/revoke -H "Authorization: Bearer $AGENT_TOKEN"
+```
+
+- `ttl`: `"15m"` by default, 10 s to 24 h (`"2h"`, or seconds).
+- A credential has at most its maker's scopes. A credential can mint narrower ones that never outlive it, and revoking
+  a credential revokes those too.
+- Each request looks the credential up. If it is revoked, expired, deleted or cannot be read, the answer is **403**
+  `{"code": "credential_refused"}` (MCP: HTTP 403, JSON-RPC error -32003). It fails closed. A client holding a cached
+  credential that gets 403 should stop and tell the person, not retry.
+- Revoking the agent (`…/agents/{id}/revoke`) ends all its credentials.
+- Every tool call made with one is in `agent_audit` with its `task`.
+
+### Idempotency keys
+
+Send a key with a mutating call and Base runs it once. Sending it again returns the first answer, whether a result or an
+error, and does not run the call again.
+
+- REST: the `Idempotency-Key: <key>` header. A replay carries `Idempotent-Replayed: true`.
+- MCP: `tools/call` with `params._meta.idempotency_key`. A replay has `_meta.replayed: true`.
+
+Keys belong to the caller and last 24 hours. The same key with other arguments gets **422**; the same key while the
+first call still runs gets **409**. Read tools ignore keys (reading twice is safe). Clients: generate a UUIDv7 per
+mutation, and do not retry a mutation without its key. `agent_audit` records the key, and whether the call was a replay.
 
 ## Tools
 
@@ -186,7 +230,12 @@ subscription fields.
 ## Safety
 
 - Every tool call is recorded in `agent_audit` (who, what, arguments with anything named like a password, secret,
-  token or key redacted, success or the error). Agents cannot change or delete it.
+  token or key redacted, success or the error, the task credential's `task`, the `idempotency_key` and whether it
+  was `replayed`). Refusals are recorded too: a missing scope, an unknown tool, bad arguments. Agents cannot change or
+  delete it.
+- Reselling models through the gateway makes you a seller: your terms of service, the providers' terms (some forbid
+  resale), sales tax or VAT on what you sell, refunds and chargebacks (Stripe debits disputed payments, plus a fee) are
+  yours to handle. Base meters and bills; it does not give legal or tax advice.
 - Agents cannot delete the system collections, `agents` or `agent_audit`, and need `confirm` to delete a collection.
 - Hooks run with the server's power. Give `hooks` only to agents you trust as much as yourself.
 - Settings never show the SMTP password or S3 secrets.
