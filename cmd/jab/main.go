@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 
 	"github.com/lucky-edgelord/jade-agent-base/agent"
 	"github.com/lucky-edgelord/jade-agent-base/jab"
@@ -27,7 +28,7 @@ func main() {
 	app := pocketbase.New()
 	app.RootCmd.Use = "jab"
 	app.RootCmd.Short = "Jade Agent Base: a backend AI agents can run"
-	app.RootCmd.Version = jab.Version + " (PocketBase " + pocketbase.Version + ")"
+	app.RootCmd.Version = jab.Version + " (PocketBase " + pbVersion() + ")"
 
 	var modules, hooksDir, migrationsDir, publicDir string
 	var hooksWatch, automigrate, indexFallback bool
@@ -74,6 +75,18 @@ func main() {
 	if err := app.Start(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// the PocketBase version this binary was built with
+func pbVersion() string {
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		for _, d := range bi.Deps {
+			if d.Path == "github.com/pocketbase/pocketbase" {
+				return d.Version
+			}
+		}
+	}
+	return pocketbase.Version
 }
 
 func env(k, def string) string {
