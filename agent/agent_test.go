@@ -31,7 +31,7 @@ func setup(t *testing.T) *env {
 	dir := t.TempDir()
 	app := core.NewBaseApp(core.BaseAppConfig{DataDir: filepath.Join(dir, "pb_data")})
 	hooks, public := filepath.Join(dir, "pb_hooks"), filepath.Join(dir, "pb_public")
-	Register(app, Config{HooksDir: hooks, PublicDir: public, Version: "test", Modules: []string{"agent"}})
+	Register(app, Config{HooksDir: hooks, PublicDir: public, Version: "test"})
 	if err := app.Bootstrap(); err != nil {
 		t.Fatal(err)
 	}

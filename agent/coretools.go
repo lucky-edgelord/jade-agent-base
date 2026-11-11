@@ -42,7 +42,11 @@ func coreTools() {
 			if c.Actor != nil && !c.Actor.IsSuperuser() {
 				who = "agent " + c.Actor.GetString("name")
 			}
-			return map[string]any{"version": cfg.Version, "modules": cfg.Modules, "you": who, "scopes": sc, "collections": names,
+			mods := []string{"agent"}
+			if cfg.Modules != nil {
+				mods = cfg.Modules()
+			}
+			return map[string]any{"version": cfg.Version, "modules": mods, "you": who, "scopes": sc, "collections": names,
 				"appName": c.App.Settings().Meta.AppName, "appURL": c.App.Settings().Meta.AppURL, "go": runtime.Version(),
 				"hooks": "server-side JavaScript in pb_hooks (*.pb.js), reloaded on change: routes, record hooks, cron jobs",
 				"site":  "static files in pb_public, served at /",
