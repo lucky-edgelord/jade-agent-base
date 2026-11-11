@@ -502,6 +502,10 @@ func statusOf(err error) (int, string) {
 	if errors.As(err, &se) {
 		return se.code, se.msg
 	}
+	var sc interface{ StatusCode() int }
+	if errors.As(err, &sc) {
+		return sc.StatusCode(), err.Error()
+	}
 	var ue *UpstreamError
 	if errors.As(err, &ue) {
 		code := ue.Status

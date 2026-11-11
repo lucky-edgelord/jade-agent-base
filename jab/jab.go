@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/lucky-edgelord/jade-agent-base/agent"
+	"github.com/lucky-edgelord/jade-agent-base/billing"
 	"github.com/lucky-edgelord/jade-agent-base/gateway"
 	"github.com/lucky-edgelord/jade-agent-base/state"
 	"github.com/pocketbase/pocketbase/core"
@@ -16,7 +17,7 @@ import (
 )
 
 // Version of Jade Agent Base.
-const Version = "0.2.0"
+const Version = "0.3.0"
 
 // Options for Setup.
 type Options struct {
@@ -47,6 +48,15 @@ func init() {
 	Add(&Module{Name: "gateway", Description: "serve chat, embeddings, decisions, web search and fetch to signed-up users: providers, models, plans, API keys, metered usage (OpenAI and Ollama APIs)",
 		Register: func(app core.App, o Options) { gateway.Register(app) },
 		Enable:   gateway.Enable, Disable: gateway.Disable})
+	Add(&Module{Name: "billing", Description: "charge for plans with Stripe: checkout, the customer portal, webhooks that move users between plans; paid plans need an active subscription (switches the gateway on too)",
+		Register: func(app core.App, o Options) { billing.Register(app) },
+		Enable: func(app core.App) error {
+			if err := billing.Enable(app); err != nil {
+				return err
+			}
+			return state.SetEnabled("gateway", true)
+		},
+		Disable: billing.Disable})
 }
 
 // Names of every module in this build.

@@ -15,9 +15,9 @@ Batches, each tested and merged before the next:
 1. **Agent control** (0.1): agent identities with scopes, tools over REST and MCP, an audit log.
 2. **Model gateway** (0.2): chat, embeddings, decisions, web search and fetch for signed-up users, with API keys,
    plans, rate limits and metered, priced usage. Modules switch on at runtime.
-3. **In-process embeddings**: small embedding models running inside the server, with no provider needed.
-4. **Billing with Stripe**: plans, subscriptions, metered usage, checkout and the customer portal, with tools so an agent
-   can set up and run the business.
+3. **Billing with Stripe** (0.3): plans on sale, Checkout, the customer portal, and webhooks that move users between
+   plans.
+4. **In-process embeddings**: small embedding models running inside the server, with no provider needed.
 5. **The kit and UI**: a kit client and sign-in, account and billing components.
 
 ## Run it
@@ -42,6 +42,7 @@ agent,gateway` (or `JAB_MODULES`) sets them at start instead.
 | --- | --- |
 | `agent` (always on) | Agents, the tool list over REST and MCP, the audit log. |
 | `gateway` | Chat, embeddings, decisions, web search and fetch for signed-up users (below). |
+| `billing` | Stripe: plans on sale, Checkout, the customer portal, webhooks; paid plans need an active subscription. Switches the gateway on too. |
 
 ## Agents
 
@@ -141,6 +142,28 @@ tokens, price, time and status. Users see their own usage and keys; provider key
 | `model_set`, `model_delete` | Offer a model under your name for it: kind, upstream name, prices (per million tokens, or per call), plans. |
 | `plan_set`, `user_plan` | Plans (monthly tokens or budget, requests a minute, price, the default plan); put a user on one. |
 | `usage_report`, `keys_list`, `key_revoke` | Usage and charges by user, model or day; keys (never the secrets). |
+
+## Billing
+
+An agent connects Stripe and sells the gateway's plans:
+
+1. `billing_setup` with the Stripe secret key and webhook signing secret. Both are write-only; `STRIPE_SECRET_KEY` and
+   `STRIPE_WEBHOOK_SECRET` in the environment win if they are set.
+2. In Stripe, point a webhook at `<appURL>/api/billing/webhook` for `checkout.session.completed`,
+   `customer.subscription.*` and `invoice.payment_failed`. `billing_status` shows the exact URL.
+3. `plan_set` gives a plan its `price_month`, and `plan_publish` puts it on sale (a Stripe product and monthly price).
+
+Users then call `POST /api/billing/checkout {"plan": "pro"}` and open the returned Stripe Checkout URL. They manage the
+subscription in the portal (`POST /api/billing/portal`) and see it at `GET /api/billing/me`. Stripe's signed webhook
+moves them onto the plan they pay for, keeps a past-due user's plan but stops its paid models until payment, and
+returns a cancelled user to the default plan. Each event is applied once. Users cannot set their own plan or
+subscription fields.
+
+| Tool | Does |
+| --- | --- |
+| `billing_setup`, `billing_status` | Connect Stripe; see test or live mode, the webhook URL, plans for sale, subscribers and monthly recurring revenue. |
+| `plan_publish` | Make or replace a plan's Stripe price from its `price_month`. |
+| `subscribers_list`, `billing_events` | Who pays for what; what Stripe reported. |
 
 ## Safety
 
