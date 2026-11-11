@@ -17,7 +17,7 @@ Batches, each tested and merged before the next:
    plans, rate limits and metered, priced usage. Modules switch on at runtime.
 3. **Billing with Stripe** (0.3): plans on sale, Checkout, the customer portal, and webhooks that move users between
    plans.
-4. **In-process embeddings**: small embedding models running inside the server, with no provider needed.
+4. **In-process embeddings** (0.4): model2vec embedding models running inside the server, in pure Go.
 5. **The kit and UI**: a kit client and sign-in, account and billing components.
 
 ## Run it
@@ -118,8 +118,10 @@ or off on its own (`gateway_serve`): `chat`, `embed`, `decide`, `search`, `fetch
 | `openai` | any OpenAI-compatible API: OpenAI, OpenRouter, vLLM, llama.cpp, LM Studio, Groq, Together, … | https://api.openai.com/v1 |
 | `anthropic` | chat (Claude) | https://api.anthropic.com |
 | `google` | chat and embeddings (Gemini) | https://generativelanguage.googleapis.com/v1beta |
+| `local` | embeddings computed **inside this server**: [model2vec](https://github.com/MinishLab/model2vec) static models from the Hugging Face Hub (`minishlab/potion-base-8M`, …), pure Go, downloaded on first use into `pb_data/models` | none |
 
-Every client format works with every provider: messages, images, tool calls (ids are matched up for providers that
+Local embeddings need no provider account or GPU. They run at about 13 µs a sentence on one core, and their vectors
+match the Python model2vec library. Every client format works with every provider: messages, images, tool calls (ids are matched up for providers that
 need them), thinking, JSON output, and streaming are translated both ways.
 
 | Endpoint | Format |

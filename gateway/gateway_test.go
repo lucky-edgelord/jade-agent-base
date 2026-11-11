@@ -6,14 +6,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/lucky-edgelord/jade-agent-base/jab"
+	"github.com/lucky-edgelord/jade-agent-base/staticembed"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	_ "github.com/pocketbase/pocketbase/migrations"
@@ -547,5 +550,60 @@ func TestLimitsAndKeys(t *testing.T) {
 	e.tool("provider_set", map[string]any{"name": "local", "base_url": "http://127.0.0.1:1"})
 	if code, _ := e.json("POST", "/v1/embeddings", bearer(key2), map[string]any{"model": "embed-small", "input": "x"}); code != 502 {
 		t.Fatalf("unreachable upstream: %d", code)
+	}
+}
+
+// embeddings computed inside the server: an agent offers a model2vec model, it downloads on first use, users embed
+func TestLocalEmbeddings(t *testing.T) {
+	if d := os.Getenv("JAB_M2V_DIR"); d != "" {
+		hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.ServeFile(w, r, filepath.Join(d, filepath.Base(r.URL.Path)))
+		}))
+		defer hub.Close()
+		old := staticembed.HubURL
+		staticembed.HubURL = hub.URL
+		defer func() { staticembed.HubURL = old }()
+	}
+	e := setup(t, []string{"gateway"})
+	e.tool("provider_set", map[string]any{"name": "here", "type": "local"})
+	if msg := e.toolErr("model_set", map[string]any{"name": "x", "provider": "here", "kind": "chat"}); !strings.Contains(msg, "embedding models only") {
+		t.Fatalf("local chat model accepted: %s", msg)
+	}
+	e.tool("model_set", map[string]any{"name": "potion", "provider": "here", "upstream": "minishlab/potion-base-8M", "kind": "embed", "price_in": 0.01})
+	if l := e.tool("provider_models", map[string]any{"name": "here"}).(map[string]any); len(l["downloaded"].([]any)) != 0 {
+		t.Fatalf("downloaded before use: %v", l)
+	}
+	_, key := e.user("dee@example.com")
+	code, m := e.json("POST", "/v1/embeddings", bearer(key), map[string]any{"model": "potion", "input": []any{"A cat sat on the mat.", "A kitten rested on a rug.", "Quarterly revenue grew."}})
+	if code != 200 {
+		t.Fatalf("local embeddings: %d %v", code, m)
+	}
+	vec := func(i int) []float64 {
+		raw := m["data"].([]any)[i].(map[string]any)["embedding"].([]any)
+		out := make([]float64, len(raw))
+		for j, x := range raw {
+			out[j] = x.(float64)
+		}
+		return out
+	}
+	dot := func(a, b []float64) float64 {
+		s := 0.0
+		for i := range a {
+			s += a[i] * b[i]
+		}
+		return s
+	}
+	a, b, c := vec(0), vec(1), vec(2)
+	if len(a) != 256 || math.Abs(dot(a, a)-1) > 1e-6 || dot(a, b) <= dot(a, c) {
+		t.Fatalf("local vectors: dims %d, near %.3f, far %.3f", len(a), dot(a, b), dot(a, c))
+	}
+	if m["usage"].(map[string]any)["prompt_tokens"].(float64) < 10 {
+		t.Fatalf("local token count: %v", m["usage"])
+	}
+	if l := e.tool("provider_models", map[string]any{"name": "here"}).(map[string]any); fmt.Sprint(l["downloaded"]) != "[minishlab/potion-base-8M]" {
+		t.Fatalf("downloaded: %v", l)
+	}
+	if _, err := os.Stat(filepath.Join(e.app.DataDir(), "models", "minishlab", "potion-base-8M", "model.safetensors")); err != nil {
+		t.Fatal("model not kept in pb_data/models")
 	}
 }
