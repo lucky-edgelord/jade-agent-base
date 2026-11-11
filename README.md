@@ -13,6 +13,9 @@ the presentation layer, and [Jade Agent Stack](https://github.com/lucky-edgelord
 all four. The seam is MCP: Vault and Kit ask, Base answers, Base logs, Base can say no. Base hosts no agent and has no
 scheduler of its own.
 
+The rules between Vault and Base (credentials, idempotency, refusals, audit, resuming) are in the stack's
+[CONTRACT.md](https://github.com/lucky-edgelord/jade-agent-stack/blob/main/CONTRACT.md).
+
 ## Where it is going
 
 Batches, each tested and merged before the next:
