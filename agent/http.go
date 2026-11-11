@@ -2,6 +2,7 @@ package agent
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -21,6 +22,8 @@ func routes(se *core.ServeEvent) {
 		return e.Error(http.StatusMethodNotAllowed, "this MCP server answers POST requests with JSON (no event stream)", nil)
 	})
 	g.DELETE("/mcp", func(e *core.RequestEvent) error { return e.NoContent(http.StatusNoContent) })
+	g.POST("/credentials", mintRoute)
+	g.POST("/credentials/{id}/revoke", revokeCredentialRoute)
 	g.POST("/agents", createAgentRoute).Bind(apis.RequireSuperuserAuth())
 	g.POST("/agents/{id}/token", tokenRoute).Bind(apis.RequireSuperuserAuth())
 	g.POST("/agents/{id}/revoke", revokeRoute).Bind(apis.RequireSuperuserAuth())
@@ -42,7 +45,7 @@ func toolJSON(t *Tool, format string) map[string]any {
 func listTools(e *core.RequestEvent) error {
 	_, scopes, err := Caller(e)
 	if err != nil {
-		return e.UnauthorizedError(err.Error(), nil)
+		return authError(e, err)
 	}
 	f := e.Request.URL.Query().Get("format")
 	out := []map[string]any{}
@@ -66,15 +69,19 @@ func readArgs(e *core.RequestEvent) (map[string]any, error) {
 }
 
 func runTool(e *core.RequestEvent) error {
-	actor, scopes, err := Caller(e)
+	actor, scopes, task, err := CallerTask(e)
 	if err != nil {
-		return e.UnauthorizedError(err.Error(), nil)
+		return authError(e, err)
 	}
 	args, err := readArgs(e)
 	if err != nil {
 		return e.JSON(http.StatusBadRequest, map[string]any{"error": "the body must be a JSON object of arguments: " + err.Error()})
 	}
-	out, err := Run(e.App, actor, scopes, e.Request.PathValue("name"), args)
+	key := e.Request.Header.Get("Idempotency-Key")
+	out, err, replayed := RunIdempotent(e.App, actor, scopes, e.Request.PathValue("name"), args, RunOpts{Task: task, Key: key})
+	if replayed {
+		e.Response.Header().Set("Idempotent-Replayed", "true")
+	}
 	if err != nil {
 		return e.JSON(httpStatus(err), map[string]any{"error": err.Error()})
 	}
@@ -95,7 +102,11 @@ func rpcErr(id json.RawMessage, code int, msg string) map[string]any {
 }
 
 func mcp(e *core.RequestEvent) error {
-	actor, scopes, authErr := Caller(e)
+	actor, scopes, task, authErr := CallerTask(e)
+	if errors.Is(authErr, ErrCredential) { // a refused credential: stop, do not retry
+		return e.JSON(http.StatusForbidden, rpcErr(nil, -32003, authErr.Error()))
+	}
+	e.Set("jab_task", task)
 	body, err := io.ReadAll(io.LimitReader(e.Request.Body, 32<<20))
 	if err != nil {
 		return e.JSON(http.StatusBadRequest, rpcErr(nil, -32700, err.Error()))
@@ -163,19 +174,26 @@ func handleRPC(e *core.RequestEvent, actor *core.Record, scopes map[string]bool,
 		var p struct {
 			Name      string         `json:"name"`
 			Arguments map[string]any `json:"arguments"`
+			Meta      map[string]any `json:"_meta"`
 		}
 		if err := json.Unmarshal(r.Params, &p); err != nil {
 			return rpcErr(r.ID, -32602, "invalid params: "+err.Error())
 		}
-		out, err := Run(e.App, actor, scopes, p.Name, p.Arguments)
+		key, _ := p.Meta["idempotency_key"].(string)
+		if key == "" {
+			key, _ = p.Meta["idempotencyKey"].(string)
+		}
+		task, _ := e.Get("jab_task").(string)
+		out, err, replayed := RunIdempotent(e.App, actor, scopes, p.Name, p.Arguments, RunOpts{Task: task, Key: key})
+		meta := map[string]any{"replayed": replayed}
 		if err != nil {
-			return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": "Error: " + err.Error()}}, "isError": true})
+			return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": "Error: " + err.Error()}}, "isError": true, "_meta": meta})
 		}
 		text, _ := json.MarshalIndent(out, "", " ")
 		if s, isStr := out.(string); isStr {
 			text = []byte(s)
 		}
-		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": string(text)}}, "structuredContent": wrap(out)})
+		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": string(text)}}, "structuredContent": wrap(out), "_meta": meta})
 	case "resources/list":
 		return ok(map[string]any{"resources": []any{}})
 	case "prompts/list":

@@ -111,11 +111,49 @@ func ensureCollections(app core.App) error {
 			return fmt.Errorf("create %s: %w", AuditCollection, err)
 		}
 	}
-	return nil
+	// 0.6: the task and idempotency key of each call
+	if c, err := app.FindCollectionByNameOrId(AuditCollection); err == nil && c.Fields.GetByName("task") == nil {
+		c.Fields.Add(&core.TextField{Name: "task", Max: 200}, &core.TextField{Name: "idempotency_key", Max: 200}, &core.BoolField{Name: "replayed"})
+		if err := app.Save(c); err != nil {
+			return err
+		}
+	}
+	if err := ensureCredentials(app); err != nil {
+		return err
+	}
+	return ensureIdempotency(app)
 }
 
 // Caller resolves who is calling and what they may do: an agent with its scopes, or a superuser with all of them.
+// With a task credential, the scopes are the credential's (that the agent still has).
 func Caller(e *core.RequestEvent) (*core.Record, map[string]bool, error) {
+	a, s, _, err := CallerTask(e)
+	return a, s, err
+}
+
+// CallerTask is Caller plus the task_id of the task credential used ("" for an ordinary token).
+func CallerTask(e *core.RequestEvent) (*core.Record, map[string]bool, string, error) {
+	a, s, err := caller(e)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	c, err := credential(e)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if c == nil {
+		return a, s, "", nil
+	}
+	narrowed := map[string]bool{}
+	for _, x := range credScopes(c) {
+		if s[x] {
+			narrowed[x] = true
+		}
+	}
+	return a, narrowed, c.GetString("task_id"), nil
+}
+
+func caller(e *core.RequestEvent) (*core.Record, map[string]bool, error) {
 	if e.Auth == nil {
 		return nil, nil, errors.New("sign in as an agent or a superuser (Authorization: <token>)")
 	}
@@ -164,6 +202,10 @@ func redact(v any) any {
 }
 
 func audit(app core.App, actor *core.Record, tool string, args map[string]any, _ any, err error) {
+	auditWith(app, actor, tool, args, err, RunOpts{})
+}
+
+func auditWith(app core.App, actor *core.Record, tool string, args map[string]any, err error, o RunOpts) {
 	if cfg.NoAudit || app == nil {
 		return
 	}
@@ -183,6 +225,9 @@ func audit(app core.App, actor *core.Record, tool string, args map[string]any, _
 	r.Set("tool", tool)
 	r.Set("args", redact(args))
 	r.Set("ok", err == nil)
+	r.Set("task", o.Task)
+	r.Set("idempotency_key", o.Key)
+	r.Set("replayed", o.Replayed)
 	if err != nil {
 		r.Set("error", err.Error())
 	}
@@ -259,7 +304,10 @@ func slug(s string) string {
 }
 
 func httpStatus(err error) int {
-	if errors.Is(err, ErrScope) {
+	if s := idempotencyStatus(err); s != 0 {
+		return s
+	}
+	if errors.Is(err, ErrScope) || errors.Is(err, ErrCredential) {
 		return http.StatusForbidden
 	}
 	return http.StatusBadRequest
