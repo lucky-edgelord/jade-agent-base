@@ -44,9 +44,9 @@ func coreTools() {
 			}
 			return map[string]any{"version": cfg.Version, "modules": cfg.Modules, "you": who, "scopes": sc, "collections": names,
 				"appName": c.App.Settings().Meta.AppName, "appURL": c.App.Settings().Meta.AppURL, "go": runtime.Version(),
-				"hooks":  "server-side JavaScript in pb_hooks (*.pb.js), reloaded on change: routes, record hooks, cron jobs",
-				"site":   "static files in pb_public, served at /",
-				"notes":  "Collections and records follow PocketBase: rules are filter strings (\"\" = anyone, null = superusers only). Records API for apps: /api/collections/{name}/records."}, nil
+				"hooks": "server-side JavaScript in pb_hooks (*.pb.js), reloaded on change: routes, record hooks, cron jobs",
+				"site":  "static files in pb_public, served at /",
+				"notes": "Collections and records follow PocketBase: rules are filter strings (\"\" = anyone, null = superusers only). Records API for apps: /api/collections/{name}/records."}, nil
 		}})
 
 	// ---- collections ----
@@ -81,7 +81,7 @@ func coreTools() {
 	AddTool(&Tool{Name: "collection_get", Scope: ScopeRead,
 		Description: "A collection's full definition: fields with options, API rules, indexes.",
 		Parameters:  obj(map[string]any{"name": str("collection name or id")}, "name"),
-		Run: func(c *Call) (any, error) { return c.App.FindCollectionByNameOrId(c.Str("name")) }})
+		Run:         func(c *Call) (any, error) { return c.App.FindCollectionByNameOrId(c.Str("name")) }})
 	AddTool(&Tool{Name: "collection_create", Scope: ScopeSchema,
 		Description: `Create a collection. type: base (default), auth (users that sign in) or view (a read-only SQL query in viewQuery).
 fields: [{"name":"title","type":"text","required":true}, {"name":"price","type":"number"}, {"name":"owner","type":"relation","collectionId":"<id or name>","maxSelect":1}, {"name":"tags","type":"select","values":["a","b"],"maxSelect":3}, {"name":"photo","type":"file","maxSelect":1}, {"name":"created","type":"autodate","onCreate":true}]
@@ -276,7 +276,9 @@ Rules are PocketBase filters: "" lets anyone, null (or leaving it out) only supe
 
 	// ---- server-side JavaScript ----
 	AddTool(&Tool{Name: "hooks_list", Scope: ScopeRead, Description: "The server-side JavaScript files (pb_hooks/*.pb.js).",
-		Run: func(c *Call) (any, error) { return listDir(cfg.HooksDir, func(p string) bool { return strings.HasSuffix(p, ".pb.js") }) }})
+		Run: func(c *Call) (any, error) {
+			return listDir(cfg.HooksDir, func(p string) bool { return strings.HasSuffix(p, ".pb.js") })
+		}})
 	AddTool(&Tool{Name: "hook_read", Scope: ScopeRead, Description: "Read a hook file.",
 		Parameters: obj(map[string]any{"name": str("file name, e.g. orders.pb.js")}, "name"),
 		Run: func(c *Call) (any, error) {
