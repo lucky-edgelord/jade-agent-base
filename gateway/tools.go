@@ -95,7 +95,7 @@ func agentTools() {
 			return out, nil
 		}})
 	add(&agent.Tool{Name: "provider_set",
-		Description: "Add or change a provider (by name). Types: ollama (a machine, default http://localhost:11434), ollama-cloud (https://ollama.com, needs api_key; also web search and fetch), ollaya (decision models, default http://localhost:11435), openai (any OpenAI-compatible API: OpenAI, OpenRouter, vLLM, llama.cpp, LM Studio, Groq, Together… set base_url), anthropic, google. The api_key is stored and never shown again.",
+		Description: "Add or change a provider (by name). Types: ollama (a machine, default http://localhost:11434), ollama-cloud (https://ollama.com, needs api_key; also web search and fetch), ollaya (decision models, default http://localhost:11435), local (embedding models running inside this server: model2vec, e.g. minishlab/potion-base-8M; no key, downloads on first use), openai (any OpenAI-compatible API: OpenAI, OpenRouter, vLLM, llama.cpp, LM Studio, Groq, Together… set base_url), anthropic, google. The api_key is stored and never shown again.",
 		Parameters: p(map[string]any{"name": s("a name you choose"), "type": s("ollama | ollama-cloud | ollaya | openai | anthropic | google"), "base_url": s("leave empty for the type's default"),
 			"api_key": s("the provider's key (write-only)"), "headers": map[string]any{"type": "object", "description": "extra headers"}, "timeout": n("seconds (default 300)"), "enabled": b("default true")}, "name"),
 		Run: func(c *agent.Call) (any, error) {
@@ -131,7 +131,12 @@ func agentTools() {
 			if err != nil {
 				return nil, fmt.Errorf("no provider %q", c.Str("name"))
 			}
-			return listUpstream(providerFrom(r))
+			pv := providerFrom(r)
+			if pv.Type == "local" {
+				return map[string]any{"provider": pv.Name, "ok": true, "downloaded": localModels(), "suggested": SuggestedLocal,
+					"note": "local runs model2vec embedding models from the Hugging Face Hub in the server; offer one with model_set (upstream: owner/name, kind: embed). It downloads on first use."}, nil
+			}
+			return listUpstream(pv)
 		}})
 	add(&agent.Tool{Name: "provider_delete", Destructive: true, Description: "Remove a provider (its models must be removed or moved first).",
 		Parameters: p(map[string]any{"name": s("provider name")}, "name"),
@@ -185,6 +190,14 @@ func agentTools() {
 			for _, k := range []string{"upstream", "kind", "price_in", "price_out", "price_call", "enabled", "description", "context"} {
 				if v, ok := c.Args[k]; ok {
 					r.Set(k, v)
+				}
+			}
+			if pr, err := c.App.FindRecordById("providers", r.GetString("provider")); err == nil && pr.GetString("type") == "local" {
+				if r.GetString("kind") != "embed" {
+					return nil, fmt.Errorf("local providers run embedding models only (kind: embed)")
+				}
+				if !isLocalName(upstreamModel(r)) {
+					return nil, fmt.Errorf("a local model's upstream is a Hugging Face repo like %s", SuggestedLocal[0])
 				}
 			}
 			if err := c.App.Save(r); err != nil {

@@ -38,7 +38,7 @@ import (
 // Scope agents need to run billing.
 const Scope = "billing"
 
-// APIBase is Stripe's API (tests point it elsewhere).
+// APIBase is Stripe's API (STRIPE_API_BASE points it at stripe-mock or a test server).
 var APIBase = "https://api.stripe.com"
 
 // Active subscription states: the user keeps the paid plan.
@@ -56,6 +56,9 @@ func Register(app core.App) {
 // Enable needs the gateway (plans live there): it switches the gateway's collections on, adds billing's fields and
 // tools, and makes paid plans require an active subscription.
 func Enable(app core.App) error {
+	if v := os.Getenv("STRIPE_API_BASE"); v != "" { // stripe-mock, or a test server
+		APIBase = strings.TrimRight(v, "/")
+	}
 	if err := gateway.Enable(app); err != nil {
 		return err
 	}

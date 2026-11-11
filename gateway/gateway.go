@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -35,13 +36,14 @@ var Defaults = map[string]string{
 	"openai":       "https://api.openai.com/v1",
 	"anthropic":    "https://api.anthropic.com",
 	"google":       "https://generativelanguage.googleapis.com/v1beta",
+	"local":        "",
 }
 
 // Kinds of models.
 var Kinds = []string{"chat", "embed", "decide", "search", "fetch"}
 
 var upstreams = map[string]Upstream{
-	"ollama": ollamaUp{}, "ollama-cloud": ollamaUp{}, "openai": openaiUp{}, "anthropic": anthropicUp{}, "google": googleUp{},
+	"ollama": ollamaUp{}, "ollama-cloud": ollamaUp{}, "openai": openaiUp{}, "anthropic": anthropicUp{}, "google": googleUp{}, "local": localUp{},
 }
 
 // Check runs before every request (after the plan's limits). Billing adds a check for paid credit here.
@@ -76,6 +78,7 @@ func Register(app core.App) {
 
 // Enable makes the gateway's collections and adds its tools.
 func Enable(app core.App) error {
+	localDir = filepath.Join(app.DataDir(), "models")
 	if err := ensureCollections(app); err != nil {
 		return err
 	}
@@ -225,7 +228,7 @@ func ensureCollections(app core.App) error {
 }
 
 func keys(m map[string]string) []string {
-	out := []string{"ollama", "ollama-cloud", "ollaya", "openai", "anthropic", "google"}
+	out := []string{"ollama", "ollama-cloud", "ollaya", "openai", "anthropic", "google", "local"}
 	for k := range m {
 		found := false
 		for _, o := range out {
