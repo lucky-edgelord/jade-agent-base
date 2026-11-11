@@ -65,6 +65,7 @@ func Register(app core.App, c Config) {
 		Func: func(e *core.ServeEvent) error { routes(e); return e.Next() },
 	})
 	coreTools()
+	authTools()
 }
 
 // HooksDir and PublicDir as resolved after bootstrap.

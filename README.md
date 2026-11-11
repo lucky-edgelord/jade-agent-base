@@ -73,7 +73,23 @@ ends every token at once. Superusers may call every tool.
 | `hooks_list`, `hook_read` / `hook_write`, `hook_delete` | read / hooks | Server-side JavaScript; the syntax is checked before saving and the server reloads. |
 | `site_list`, `site_read` / `site_write`, `site_delete` | read / site | The static site; text or base64; paths cannot leave `pb_public` or touch hidden files. |
 | `settings_get`, `settings_update` | settings | Merged in; a secret you leave out is kept. |
+| `auth_providers` | read | How people sign in: password, which OAuth2 providers are on, every provider that can be added, the redirect URL to register. |
+| `auth_provider_set`, `auth_provider_remove` | settings | Sign in with Google, Facebook, GitHub, Apple, Microsoft, Discord, … or any OpenID Connect server (OAuth2). The client secret is write-only (`client_secret`, or `client_secret_env` read on the server). |
+| `rate_limits` | settings | The API rate limiter per client IP (off until turned on): rules like `*:auth` 2 per 3 s, `*:create`, `/api/`. The gateway's per-plan limits are separate (`plan_set`). |
 | `logs_list`, `audit_list` | read | Server logs; what agents did. |
+
+### Sign in with Google, Facebook, GitHub, …
+
+PocketBase does OAuth2; an agent turns providers on. Make an OAuth app at the provider, set the public URL, register
+`https://your.site/api/oauth2-redirect` with the provider, then:
+
+```sh
+curl -H "Authorization: $TOKEN" -X POST …/api/agent/tools/settings_update -d '{"set":{"meta":{"appURL":"https://your.site"}}}'
+curl -H "Authorization: $TOKEN" -X POST …/api/agent/tools/auth_provider_set \
+  -d '{"name":"google","client_id":"….apps.googleusercontent.com","client_secret_env":"GOOGLE_CLIENT_SECRET"}'
+```
+
+`<jade-auth>` (Jade Agent UI/UX 1.2+) shows a "Continue with Google" button for each provider that is on.
 
 ### Over REST
 
